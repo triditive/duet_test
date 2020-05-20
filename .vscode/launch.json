@@ -1,0 +1,26 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: DUET PYTHON TEST",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/duet_python_test.py",
+            "stopOnEntry": false,
+            "env": {
+                "LC_ALL": "en_US.utf-8",
+                "LANG": "en_US.utf-8",
+            },
+            "args": [
+                "-test",
+            ],
+            "envFile": "${workspaceRoot}/venv",
+            "debugOptions": [
+                "WaitOnAbnormalExit",
+                "WaitOnNormalExit",
+                "RedirectOutput"
+            ],
+            "jinja": true
+        },
+    ]
+}
