@@ -46,7 +46,7 @@ def get_logger(log, text):
     my_logger = logging.getLogger(log_name)
     my_logger.setLevel(logging.DEBUG)
 
-    ARM_LOG = '../logs_amcell/arm_%s.log' % log_name
+    ARM_LOG = 'arm_%s.log' % log_name
     handler = logging.handlers.RotatingFileHandler(
         ARM_LOG, maxBytes=4*1024*1024, backupCount=5)
 
