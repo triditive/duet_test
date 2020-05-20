@@ -1,2 +1,3 @@
 # duet_test
-Communication with Duet3 using Python
+
+Just calls the DUET 3D and gets a message to process
