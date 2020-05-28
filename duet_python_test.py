@@ -1,5 +1,6 @@
 import pycurl
 import urllib
+import json
 
 from io import BytesIO
 from print_helper import *
@@ -19,7 +20,10 @@ import json
 import time
 
 config = {
+     # 'ip': "192.168.1.100",
+
     'ip': "192.168.1.100",
+
     'interface': "docker0",
      #'interface': "tun0",                 # VPN
      #'interface': "enp5s0",               # Ethernet 192.168.0.10
@@ -77,7 +81,72 @@ def get_status(config):
 
     return ret
 
-def run_gcode_wait_for_response(config, gcode, regex=None, filter=None, output_debug=True):
+
+def split_malformed_json_line(line):
+    array_jsons = []
+    c = 0
+    pos = 0
+    for ch in line:
+        if ch == '{':
+            if c == 0:
+                c_start = pos
+            c += 1
+        elif ch == '}':
+            c -= 1
+            if c == 0:
+                js = line[c_start:pos + 1]
+                array_jsons.append(js)
+
+        pos += 1
+    return array_jsons
+
+
+def duet_parse_json(lines, json_key):
+    """ This is a hack to take into a count the malformed JSON returned
+        It should be either carriage return separated or comma separated in an array.
+
+        Therefore we have to split by groups of { }
+        I could write a regex to extract json
+    """
+    count = 0
+
+    for r in lines:
+        r_strip = r.strip()
+        if len(r_strip) == 0:
+            continue
+
+        if r_strip[0] != '{':
+            continue
+
+        try:
+            jsons = split_malformed_json_line(r)
+            for p in jsons:
+                print("[" + p + "]")
+                jdict = json.loads(p)
+                if jdict['key'] == json_key:
+                    return jdict
+
+        except Exception as err:
+            print_alert(" FAILED PARSING " + str(err))
+            pass
+
+    return None
+
+
+def run_gcode_wait_for_response(config, gcode, regex=None,
+                    filter=None, output_debug=True,
+                    is_json=False, json_key=None):
+    """ Runs GCODE on duet and waits for a response, due the variety of random response types this function is a bit overloaded
+        - We use a simple filter for simple text,
+        - A regex for something more complicated that we really want to check and get a value from
+        - Sensors will return a JSON, with a key on then that we can check
+            For sensors, it is better to use the rr_model call
+            https://duet3d.dozuki.com/Wiki/Object_Model_of_RepRapFirmware
+
+        This function should gracefully fail or check again
+        It has a timeout defined in the config
+    """
+
     import re
 
     response = ""
@@ -145,16 +214,24 @@ def run_gcode_wait_for_response(config, gcode, regex=None, filter=None, output_d
         return False
 
     sp = ret.split("\n")
+
+    ####### OUTPUT FOR DEBUG ######
     count = 0
     for r in sp:
         if len(r.strip()) != 0:
-            print(str(count) + ": " + r.strip())
+            print(str(count) + ": " + r)
             count += 1
 
+    ##### JSON HACKING PARSING #####
+    if is_json:
+        return duet_parse_json(sp, json_key)
+
+    ###### REGEX PARSING ############
     if regex:
         matches = re.finditer(regex, ret, re.MULTILINE)
         return matches
 
+    ###### SIMPLE FILTER PARSING #####
     if not filter:
         if output_debug:
             print(ret)
@@ -165,13 +242,12 @@ def run_gcode_wait_for_response(config, gcode, regex=None, filter=None, output_d
         if output_debug:
             print_tx("RESPONSE BEGIN")
 
-        sp = ret.split("\n")
-
         count = 0
         for r in sp:
-            if len(r.strip()) != 0:
+            r_strip = r.strip()
+            if len(r_strip) != 0:
                 print(str(count) + ": " + r.strip())
-                if r.startswith(filter):
+                if filter and r.startswith(filter):
                     res.append(r)
 
             count += 1
@@ -249,6 +325,41 @@ def get_current_delta_configuration(config):
     print(json.dumps(ret, sort_keys=True, indent=4))
     return ret
 
+
+def get_pin_state(config, gcode, key):
+    """
+    get_pin_state(config, pin_id = "sensors.gpIn[0]")
+        We expect a sensor reading, therefore a key with the sensor on it as json format
+
+        Command: 'M409 K"sensors.gpIn[0]"'
+        Result: {"key":"sensors.gpIn[0]","flags":"","result":{"value":0}}
+    """
+    response = run_gcode_wait_for_response(config, gcode, is_json=True, json_key=key)
+
+    if not response:
+        print_alert(" NO RESPONSE ")
+        return None
+    else:
+        print(json.dumps(response, sort_keys=False, indent=4))
+
+        if (key.startswith("sensors.analog")):
+            value = response['result']['lastReading']
+            return value
+
+        if (key.startswith("sensors.gpIn")):
+            value = response['result']['value']
+            return value
+
+        value = response
+        print_h1(" Value " + str(value))
+        return value
+
+    if not response:
+        return None
+
+    return response
+
+
 def send_message(config, msg):
     """  """
     response = run_gcode_wait_for_response(config, "M117", msg)
@@ -265,15 +376,18 @@ def send_message(config, msg):
 
 #######################################################################################
 
-run_gcode_wait_for_response(config, "M408 S0")
+#run_gcode_wait_for_response(config, "M408 S0")
 
-count = 100
-while count > 0:
 
-    get_endstops_status(config)
-    send_message(config, "HELLO WORLD!")
+#count = 100
+#while count > 0:
 
-    get_current_position(config)
-    get_current_delta_configuration(config)
+#    get_endstops_status(config)
+#    send_message(config, "HELLO WORLD!")
 
-    count -= 1
+get_current_position(config)
+get_pin_state(config, 'M409 K"sensors.gpIn[0]"', "sensors.gpIn[0]")
+get_pin_state(config, 'M409 K"sensors.analog[1]"', "sensors.analog[1]")
+get_pin_state(config, 'M409 K"sensors" F"f,v,n,d8"', "sensors")
+
+
