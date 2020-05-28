@@ -72,6 +72,49 @@ def duet_get_url(config, url, is_json=True, Verbose=False):
 
     return ret
 
+
+def duet_get_model(config, api_path, debug=False):
+    """ https://duet3d.dozuki.com/Wiki/Gcode#Section_M409_Query_object_model
+        Parameters
+        K"key" Key string, default empty
+        F"flags" Flags string, default empty
+        Examples
+
+        M409 K"move.axes" F"f" ; report all frequently-changing properties of all axes
+        M409 K"move.axes[0] F"v,n,d4" ; report all properties of the first axis, including values not normally reported, to a maximum depth of 4
+        M409 K"move.axes[].homed" ; for all axes, report whether it is homed
+        M409 K"#move.axes" ; report the number of axes
+        M409 F"v" ; report the whole object model to the default depth
+    """
+
+    execute_url = "http://%s/rr_model?%s" % (config['ip'], api_path)
+    ret = duet_get_url(config, execute_url, is_json=True)
+    if not ret:
+        print_alert(" No found !")
+        return False
+
+    if debug:
+        print(json.dumps(ret, sort_keys=False, indent=4))
+
+    return ret
+
+
+def duet_get_analog(config, pin):
+    ret = duet_get_model(config, "key=sensors.analog[" + str(pin) + "]", True)
+    if not ret or not ret['result']:
+        return None
+
+    return ret['result']['lastReading']
+
+
+def duet_get_digital(config, pin):
+    ret = duet_get_model(config, "key=sensors.gpIn[" + str(pin) + "]", True)
+    if not ret or not ret['result']:
+        return None
+
+    return ret['result']['value']
+
+
 def get_status(config):
     #print("+ STATUS")
     execute_url = "http://%s/rr_status?type=3" % (config['ip'])
@@ -369,25 +412,60 @@ def send_message(config, msg):
     print("response");
     return response
 
-#######################################################################################
-
-#get_current_position(config)
-#get_current_delta_configuration(config)
 
 #######################################################################################
 
-#run_gcode_wait_for_response(config, "M408 S0")
+# COMMAND QUEUE TO READ THE DELTA CONFIGURATION
+ret = get_current_delta_configuration(config)
+
+send_message(config, "HELLO WORLD!")
+
+# COMMAND QUEUE TO READ ENDSTOPS
+ret = get_endstops_status(config)
+
+# COMMAND QUEUE TO READ POSITION
+ret = get_current_position(config)
+
+# USE THE COMMAND QUEUE TO READ PIN
+# Example reading sensors running the GCODE (Don't use)
+# Very flaky, don't use.
+
+#get_pin_state(config, 'M409 K"sensors.gpIn[0]"', "sensors.gpIn[0]")
+#get_pin_state(config, 'M409 K"sensors.analog[1]"', "sensors.analog[1]")
+#get_pin_state(config, 'M409 K"sensors" F"f,v,n,d8"', "sensors")
+
+# RAW READ OF SENSOR PIN 0
+
+# Example reading the sensors through the rr_model API
+ret = duet_get_model(config, "key=sensors.analog[1]", True)
+ret = duet_get_model(config, "key=sensors.gpIn[0]", True)
+
+# EXAMPLE READ THE AXIS INFORMATION
+
+ret = duet_get_model(config, "key=move.axes[1]&flags=1", True)
+
+# EXAMPLE READ A DIGITAL PIN USING THE RR_MODEL
+
+value = duet_get_digital(config, 0)
+if value == 0:
+    print_alert(" Pin is off ")
+elif value == 1:
+    print_alert(" Pin is on ")
+else:
+    print_alert(" Error reading pin ")
+
+# EXAMPLE READ AN ANALOG PIN USING THE RR_MODEL
+
+value = duet_get_analog(config, 1)
+if value == None:
+    print_alert(" Error reading pin ")
+else:
+    print_alert(" Pin last value is " + str(value))
 
 
-#count = 100
-#while count > 0:
+# Get endstops & flags
+# ret = duet_get_model(config, "key=sensors.endstops&flags=v,d3", True)
 
-#    get_endstops_status(config)
-#    send_message(config, "HELLO WORLD!")
+ret = duet_get_model(config, "key=sensors.endstops", True)
 
-get_current_position(config)
-get_pin_state(config, 'M409 K"sensors.gpIn[0]"', "sensors.gpIn[0]")
-get_pin_state(config, 'M409 K"sensors.analog[1]"', "sensors.analog[1]")
-get_pin_state(config, 'M409 K"sensors" F"f,v,n,d8"', "sensors")
-
-
+print_h1(" END" )
